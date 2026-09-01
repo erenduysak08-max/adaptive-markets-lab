@@ -1,24 +1,115 @@
+import json
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
+
 import numpy as np
 import pandas as pd
 
 
+def _unix_timestamp(value: str) -> int:
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize("UTC")
+    else:
+        timestamp = timestamp.tz_convert("UTC")
+    return int(timestamp.timestamp())
+
+
+def _download_yahoo_chart(ticker: str, start: str, end: str) -> pd.Series:
+    """Download adjusted closes from Yahoo's JSON chart response.
+
+    This endpoint does not require the cookie/crumb handshake that is often
+    rate-limited on shared cloud hosts. ``yfinance`` remains a fallback in the
+    public downloader because Yahoo can change either interface independently.
+    """
+    period_start = _unix_timestamp(start)
+    period_end = _unix_timestamp(end)
+    if period_end <= period_start:
+        raise ValueError("end date must be later than start date")
+
+    query = urlencode(
+        {
+            "period1": period_start,
+            "period2": period_end,
+            "interval": "1d",
+            "events": "div,splits",
+            "includeAdjustedClose": "true",
+        }
+    )
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        f"{quote(ticker, safe='')}?{query}"
+    )
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(request, timeout=10) as response:
+        payload = json.loads(response.read())
+
+    chart = payload.get("chart", {})
+    if chart.get("error"):
+        description = chart["error"].get("description", "Yahoo request failed")
+        raise ValueError(description)
+    results = chart.get("result") or []
+    if not results:
+        raise ValueError("Yahoo returned no chart result")
+
+    result = results[0]
+    timestamps = result.get("timestamp") or []
+    indicators = result.get("indicators", {})
+    adjusted = indicators.get("adjclose") or []
+    values = adjusted[0].get("adjclose", []) if adjusted else []
+    if not values:
+        quotes = indicators.get("quote") or []
+        values = quotes[0].get("close", []) if quotes else []
+    if not timestamps or len(timestamps) != len(values):
+        raise ValueError("Yahoo returned incomplete daily prices")
+
+    index = pd.to_datetime(timestamps, unit="s", utc=True)
+    timezone = result.get("meta", {}).get("exchangeTimezoneName", "UTC")
+    try:
+        index = index.tz_convert(timezone)
+    except (KeyError, TypeError, ValueError):
+        pass
+    index = index.normalize().tz_localize(None)
+    series = pd.Series(values, index=index, dtype=float, name=ticker).dropna()
+    series = series[~series.index.duplicated(keep="last")].sort_index()
+    if series.empty:
+        raise ValueError("Yahoo returned no usable adjusted-close data")
+    return series
+
+
 def download_adjusted_close(ticker: str, start: str, end: str) -> pd.Series:
     """Download adjusted close prices with a stable one-dimensional result."""
-    import yfinance as yf
-
-    if not ticker.strip():
+    symbol = ticker.strip().upper()
+    if not symbol:
         raise ValueError("ticker cannot be empty")
-    data = yf.download(
-        ticker.strip().upper(),
-        start=start,
-        end=end,
-        auto_adjust=False,
-        progress=False,
-        multi_level_index=False,
-    )
-    if data.empty or "Adj Close" not in data:
-        raise ValueError(f"no adjusted-close data returned for {ticker!r}")
-    return data["Adj Close"].rename(ticker.strip().upper())
+    try:
+        return _download_yahoo_chart(symbol, start, end)
+    except Exception as chart_error:
+        import yfinance as yf
+
+        try:
+            data = yf.download(
+                symbol,
+                start=start,
+                end=end,
+                auto_adjust=False,
+                progress=False,
+                multi_level_index=False,
+                threads=False,
+                timeout=10,
+            )
+        except Exception as yfinance_error:
+            raise ValueError(
+                f"Yahoo data is temporarily unavailable for {symbol}. "
+                "Try again later or use the offline demo."
+            ) from yfinance_error
+        price_column = "Adj Close" if "Adj Close" in data else "Close"
+        if data.empty or price_column not in data:
+            raise ValueError(
+                f"no adjusted-close data returned for {symbol}; "
+                f"Yahoo chart request failed: {chart_error}"
+            ) from chart_error
+        return data[price_column].rename(symbol).dropna()
 
 
 def download_adjusted_pair(
