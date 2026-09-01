@@ -4,21 +4,115 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> Markets change. How quickly should a quantitative model forget the past?
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://erenduysak08-max-adaptive-markets-lab-app-nogckh.streamlit.app)
 
-Adaptive Markets Lab is a small, reproducible platform for testing adaptive
-momentum and rolling-beta pairs strategies. It asks whether changing a model's
-memory improves genuinely unseen performance and whether deviations between two
-related assets subsequently converge.
+## Try the app
 
-The focus is research process rather than a profitable-trading claim: temporal
-train/test separation, lagged execution, costs, identical evaluation windows,
-parameter sensitivity and an auditable record of every model choice.
+The easiest way to use the project is through the live dashboard:
 
-## Try it in under two minutes
+### [Open Adaptive Markets Lab](https://erenduysak08-max-adaptive-markets-lab-app-nogckh.streamlit.app)
 
-The default demo is deterministic and offline, so it works without an API key or
-market-data connection.
+There is nothing to install. In the sidebar:
+
+1. Choose **Adaptive momentum** or **Pairs trading**.
+2. Use the reproducible offline demo or enter Yahoo Finance ticker symbols.
+3. Change the model parameters and trading constraints.
+4. Press **Run research study**.
+5. Use the tabs to inspect performance, exposure, parameter heatmaps,
+   diagnostics and the strategy code.
+
+The offline demo is selected by default, so the app still works if live market
+data is temporarily unavailable.
+
+## Why I made this
+
+I built this project while learning more about quantitative research before
+starting my Mathematics degree at Warwick. I wanted to make something more
+useful than a backtest which only shows one profitable-looking graph.
+
+The main question I wanted to investigate was:
+
+> If market behaviour changes, can a model improve by changing how much past
+> data it remembers?
+
+I also wanted to understand pairs trading, rolling regression and how easy it
+is to accidentally introduce look-ahead bias into a backtest.
+
+This project is not intended to claim that either strategy will make money. It
+is a research and learning project which makes the assumptions, model choices
+and unsuccessful results visible.
+
+## Strategies
+
+### Adaptive momentum
+
+The momentum strategy calculates an exponentially weighted average of past
+returns. A short half-life reacts quickly to recent prices, while a long
+half-life changes more slowly.
+
+For each walk-forward fold, the program:
+
+1. Tests several half-lives using the training period.
+2. Selects the best training Sharpe ratio.
+3. Freezes that choice for the next unseen test period.
+4. Repeats the process and joins only the unseen periods together.
+
+This result is compared with fixed 20-day momentum and buy-and-hold over the
+same dates.
+
+### Rolling-beta pairs trading
+
+The pairs strategy estimates a rolling relationship between two log-price
+series:
+
+```text
+Asset A = intercept + beta × Asset B + residual
+```
+
+The latest residual is converted into a z-score. The strategy enters when the
+spread is far enough from its rolling average and exits when it moves back
+towards it.
+
+Long-short mode trades both legs and normalises their combined exposure. The
+spot long-only option never shorts: it rotates into the relatively undervalued
+asset. I describe this as long-only rotation rather than market-neutral pairs
+trading.
+
+## What the dashboard includes
+
+- Offline synthetic data that is reproducible from a fixed seed
+- Live adjusted price data for one ticker or a ticker pair
+- Long-only and explicitly enabled long-short modes
+- Adjustable transaction costs and gross leverage
+- Walk-forward model selection
+- Equity curves and comparable performance statistics
+- Invested and out-of-market timelines
+- Rolling hedge ratio, spread z-score and portfolio weights
+- Two-parameter colour-scale return tables
+- Moving-block bootstrap confidence intervals
+- The Python source code used by each strategy
+- Explanations beside the main model controls
+
+## Avoiding common backtesting mistakes
+
+I tried to make the timing of the program clear and testable:
+
+- A signal calculated after close on day `t` is shifted before it earns a return.
+- Training data always ends before its related test period begins.
+- Transaction costs are charged when portfolio weights change.
+- Competing strategies are compared over identical dates.
+- Pair turnover includes changes in both legs and the rolling hedge ratio.
+- A future-mutation test changes later prices and checks that earlier results
+  remain unchanged.
+- Heatmaps use a common evaluation window so cells remain comparable.
+
+The full equations and assumptions are in
+[docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+
+## Running it locally
+
+The hosted app above is the quickest way to use the project. To run the code
+locally instead:
 
 ```bash
 git clone https://github.com/erenduysak08-max/adaptive-markets-lab.git
@@ -29,219 +123,81 @@ python -m venv .venv
 Activate the environment:
 
 ```bash
-# Windows
-.venv\Scripts\activate
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
 
-# macOS / Linux
+# macOS or Linux
 source .venv/bin/activate
 ```
 
-Install and run the complete study:
+Install and start the app:
 
 ```bash
 python -m pip install -e ".[app]"
-aml-research --demo
 streamlit run app.py
 ```
 
-The default command runs adaptive momentum and writes seven inspectable CSV
-tables to `results/latest/`. The final command opens the interactive dashboard,
-where either strategy can be selected.
-
-Docker is also supported:
+The command-line demo can also be run without downloading market data:
 
 ```bash
-docker build -t adaptive-markets-lab .
-docker run --rm -p 8501:8501 adaptive-markets-lab
-```
-
-Then visit `http://localhost:8501`.
-
-## Research design
-
-### Adaptive momentum
-
-```mermaid
-flowchart TD
-    A["Rolling training window"] --> B["Score candidate half-lives"]
-    B --> C["Freeze best candidate"]
-    C --> D["Trade next unseen block"]
-    D --> E["Move window and repeat"]
-    E --> B
-```
-
-For every fold, the engine:
-
-1. Uses the preceding 504 observations as training data.
-2. Backtests candidate half-lives of 5, 10, 20, 40 and 80 days.
-3. Selects the highest training Sharpe ratio, with deterministic tie-breaking.
-4. Freezes that choice for the next 63 unseen observations.
-5. Repeats, then joins only the test blocks into the reported adaptive result.
-
-Signals observed at close $t$ become positions for the return from $t$ to
-$t+1$. Position changes pay configurable turnover-based transaction costs. The
-adaptive model, a predeclared fixed 20-day model and buy-and-hold are all scored
-on exactly the same out-of-sample dates.
-
-The committed [offline demo results](results/demo/comparison.csv) deliberately
-show that adaptation is not guaranteed to win. That synthetic run exists to
-prove the pipeline can be reproduced without network access; it is not evidence
-about real markets.
-
-The committed [pairs demo](results/pairs_demo/comparison.csv) uses a synthetic
-spread designed to mean-revert. Its purpose is also reproducibility and engine
-inspection, not a profitability claim.
-
-See [Methodology and assumptions](docs/METHODOLOGY.md) for the equations,
-timeline and design decisions.
-
-### Rolling-beta pairs trading
-
-For each date, the pairs engine regresses the first trailing log-price series on
-the second with an intercept. It standardises the newest regression residual,
-opens a relative-value position when that residual exceeds the entry z-score and
-closes after convergence through the exit threshold.
-
-Traditional long-short weights are normalised to a configurable gross leverage.
-The separate spot preset never shorts: it rotates into the relatively
-undervalued asset and is explicitly labelled as long-only rather than
-market-neutral. Both versions shift signals by one observation and charge costs
-on turnover across both legs.
-
-## Run a real-data experiment
-
-Yahoo Finance adjusted closing prices can be downloaded through the CLI:
-
-```bash
-aml-research \
-  --ticker SPY \
-  --start 2010-01-01 \
-  --end 2026-01-01 \
-  --half-lives 5,10,20,40,80 \
-  --train-periods 504 \
-  --test-periods 63 \
-  --cost-bps 5 \
-  --output results/spy
-```
-
-An explicitly short-enabled experiment is separate:
-
-```bash
-aml-research --ticker SPY --mode long_short --leverage 2
-```
-
-A real-data pairs experiment uses two tickers:
-
-```bash
-aml-research \
-  --strategy pairs \
-  --ticker KO \
-  --ticker-b PEP \
-  --pair-lookback 60 \
-  --entry-z 2.0 \
-  --exit-z 0.5 \
-  --mode long_short \
-  --cost-bps 5 \
-  --output results/ko-pep
-```
-
-An offline pairs smoke run requires no network:
-
-```bash
+aml-research --demo
 aml-research --strategy pairs --demo --output results/pairs-latest
 ```
 
-`spot_long_only` restricts positions to cash or a fully funded long position. It
-does not make a religious ruling; asset selection and the broader strategy still
-require separate Sharia screening.
-
-## What the dashboard exposes
-
-- Adaptive momentum or rolling-beta pairs trading
-- Offline synthetic data, one live ticker or a live ticker pair
-- Candidate memory lengths, regression windows and entry/exit thresholds
-- Transaction costs, fixed benchmark and trading constraints
-- Out-of-sample metrics and comparable growth curves
-- Selected half-life through time and the complete fold audit trail
-- Invested, short and out-of-market timelines with exact portfolio weights
-- Two-variable colour-scale tables for parameter combinations
-- Information tooltips beside every numerical model control
-- The actual imported Python functions behind the selected strategy
-- Fixed-parameter sensitivity and rolling-regression diagnostics
-- Moving-block bootstrap intervals for mean return differences
-
-Overview, performance, exposure, heatmap, diagnostics, code and methodology are
-separated into tabs. The interface calls the same independent engine tested by
-the CLI; research logic is not duplicated inside the UI.
-
-## Evidence of correctness
-
-| Risk | Treatment |
-|---|---|
-| Look-ahead bias | Target positions are shifted before returns are earned |
-| Train/test leakage | Every selection ends before its test block begins |
-| Hidden future dependency | A test mutates future prices and proves earlier outputs are unchanged |
-| Ignored trading friction | Costs equal absolute position turnover times basis-point cost |
-| Hidden pairs leverage | Both leg weights are normalised and tested against gross leverage |
-| Mislabelled halal preset | Spot pair mode is labelled long-only rotation, not market-neutral pairs trading |
-| Unfair comparison | All models use the identical unseen index |
-| Cherry-picked parameter | Fixed benchmark is declared before evaluation; full sensitivity is shown separately |
-| Misleading heatmap | Every cell is a separate rerun on one common evaluation window |
-| Unreproducible demo | Seeded regime data and diffable CSV outputs are committed |
-| Overconfident point estimate | Circular block bootstrap preserves short-run return dependence |
-
-Run all checks:
+## Testing
 
 ```bash
-python -m pip install -e ".[dev]"
-ruff check .
-pytest -q
+python -m pip install -e ".[dev,app]"
+python -m ruff check .
+python -m pytest -q
 ```
 
-GitHub Actions repeats the tests and an end-to-end CLI smoke run on Python 3.10
-and 3.12 after every push.
+GitHub Actions runs the tests and command-line smoke studies after every push.
 
-## Repository structure
+## Repository layout
 
 ```text
 adaptive-markets-lab/
-├── app.py                         # Streamlit research interface
+├── app.py                         # Streamlit dashboard
 ├── src/adaptive_markets_lab/
-│   ├── backtest.py                # Lagged, costed fixed-model engine
-│   ├── walk_forward.py            # Past-only rolling model selection
-│   ├── research.py                # Baselines, sensitivity and regimes
-│   ├── momentum.py                # EWMA score and constrained signals
-│   ├── pairs.py                   # Rolling OLS, z-score states and pair weights
-│   ├── sensitivity.py             # Two-variable performance surfaces
-│   ├── metrics.py                 # Statistics and bootstrap uncertainty
-│   ├── data.py                    # Yahoo and deterministic demo data
-│   ├── config.py                  # Validated experiment definitions
-│   └── cli.py                     # Reproducible command-line workflow
-├── tests/                         # Timing, leakage and integration tests
-├── results/demo/                  # Committed offline reference outputs
-└── docs/METHODOLOGY.md            # Equations, assumptions and limitations
+│   ├── backtest.py                # Lagged and costed backtest engine
+│   ├── walk_forward.py            # Past-only model selection
+│   ├── momentum.py                # Momentum score and signals
+│   ├── pairs.py                   # Rolling regression pairs strategy
+│   ├── sensitivity.py             # Two-parameter surfaces
+│   ├── research.py                # Comparisons and saved results
+│   ├── metrics.py                 # Performance and bootstrap statistics
+│   ├── data.py                    # Live and synthetic data
+│   └── cli.py                     # Command-line interface
+├── tests/                         # Unit and leakage tests
+├── results/                       # Reproducible demonstration outputs
+└── docs/METHODOLOGY.md            # Equations and assumptions
 ```
 
-## Limitations
+## Current limitations
 
-This is a daily close-to-close educational study, not a production execution
-system. It currently studies one asset or one pair at a time and omits intraday fills,
-bid-ask spread dynamics, market impact, financing, borrow availability, taxes
-and portfolio-level risk allocation. Yahoo Finance is convenient but is not an
-institutional point-in-time database. Sharpe ratios are descriptive and use a
-zero risk-free rate. Block-bootstrap intervals quantify uncertainty in mean
-return differences, but do not remove data-mining risk or establish future
-profitability.
+The project works with daily closing prices and studies one asset or one pair
+at a time. It does not simulate intraday fills, bid-ask spread changes, market
+impact, borrowing availability, taxes or portfolio-level allocation. Yahoo
+Finance is useful for a student project but is not an institutional
+point-in-time dataset.
 
-Those limits are intentional and explicit: a narrow experiment whose timing can
-be audited is more useful than a large dashboard built on an invalid backtest.
+The pairs strategy also assumes the user has already chosen a sensible pair. A
+future version could separate pair formation from trading and test
+cointegration stability using only past data.
 
-## CV-ready description
+## What I learned
 
-> Built a Python research platform for walk-forward adaptive momentum and
-> rolling-beta pairs trading; incorporated lagged execution, two-leg turnover
-> costs, leverage and long-only constraints, block-bootstrap uncertainty,
-> two-parameter performance surfaces and future-mutation leakage tests, with a
-> reproducible CLI and tabbed Streamlit dashboard.
+This project helped me learn how to:
 
-MIT licensed. Contributions and methodological critiques are welcome.
+- Organise Python research code separately from the interface
+- Work with pandas time series and rolling regressions
+- Build a walk-forward experiment
+- Test for timing and information leakage
+- Compare parameter choices without hiding the full surface
+- Create a Streamlit dashboard and command-line interface from the same engine
+- Use automated tests, GitHub Actions and Docker
+
+Feedback and methodological criticism are welcome.
+
+MIT licensed.
