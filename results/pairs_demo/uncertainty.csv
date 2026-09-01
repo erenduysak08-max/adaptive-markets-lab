@@ -1,0 +1,2 @@
+comparison,observed_annual_mean_difference,ci_lower,ci_upper,confidence,block_size,bootstrap_samples
+Rolling-beta pairs trade minus 50/50 buy and hold,0.20478504604359757,0.0016183442011831197,0.3900135435301296,0.95,20,2000

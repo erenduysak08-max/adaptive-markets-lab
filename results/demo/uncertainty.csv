@@ -1,0 +1,3 @@
+comparison,observed_annual_mean_difference,ci_lower,ci_upper,confidence,block_size,bootstrap_samples
+Adaptive momentum minus Fixed momentum (20d half-life),-0.025445597877946598,-0.0870050158568058,0.0365911517426778,0.95,20,2000
+Adaptive momentum minus Buy and hold,-0.008319104648914086,-0.17885392057402819,0.16621368086894397,0.95,20,2000
