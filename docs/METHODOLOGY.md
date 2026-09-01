@@ -53,7 +53,7 @@ The newest residual is standardised using the sample standard deviation of the
 residuals from that same regression window:
 
 $$
-z_t=\frac{e_t}{\operatorname{sd}(e_{t-L+1},\ldots,e_t)}.
+z_t=\frac{e_t}{\mathrm{sd}(e_{t-L+1},\ldots,e_t)}.
 $$
 
 When $z_t$ rises above the entry threshold, the strategy targets a short-spread
