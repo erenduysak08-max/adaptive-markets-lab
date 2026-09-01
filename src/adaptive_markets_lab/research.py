@@ -1,7 +1,9 @@
 """Fixed-versus-adaptive research comparisons."""
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -197,7 +199,7 @@ def run_pairs_research(
     model: PairsConfig | None = None,
     backtest: BacktestConfig | None = None,
 ) -> PairResearchResult:
-    """Compare a pairs strategy with a 50/50 passive holding."""
+    """Compare a pairs strategy with an initial 50/50 buy-and-hold portfolio."""
     model = model or PairsConfig()
     backtest = backtest or BacktestConfig()
     pair = run_pairs_backtest(prices, model, backtest)
@@ -207,9 +209,14 @@ def run_pairs_research(
 
     passive_turnover = pd.Series(0.0, index=evaluation.index)
     passive_turnover.iloc[0] = 1.0
-    passive_returns = 0.5 * evaluation["return_a"] + 0.5 * evaluation["return_b"]
+    # Equal capital is placed in each asset initially and never rebalanced.
+    # The two sleeves therefore drift in value as their asset prices change.
+    sleeve_growth = (1.0 + evaluation[["return_a", "return_b"]]).cumprod()
+    passive_growth = 0.5 * sleeve_growth.sum(axis=1)
+    passive_returns = passive_growth.pct_change()
+    passive_returns.iloc[0] = passive_growth.iloc[0] - 1.0
     passive_returns.iloc[0] -= backtest.transaction_cost_bps / 10_000.0
-    passive_name = "50/50 buy and hold"
+    passive_name = "Initial 50/50 buy and hold"
     strategy_name = (
         "Long-only pair rotation"
         if backtest.trading_mode.value == "spot_long_only"
@@ -255,7 +262,21 @@ def run_pairs_research(
     )
 
 
-def save_research_artifacts(result: ResearchResult, output_dir: str | Path) -> None:
+def _save_run_config(
+    destination: Path, run_config: dict[str, Any] | None
+) -> None:
+    if run_config is None:
+        return
+    with (destination / "run_config.json").open("w", encoding="utf-8") as file:
+        json.dump(run_config, file, indent=2, sort_keys=True)
+        file.write("\n")
+
+
+def save_research_artifacts(
+    result: ResearchResult,
+    output_dir: str | Path,
+    run_config: dict[str, Any] | None = None,
+) -> None:
     """Save small, diffable CSV outputs for reproducibility."""
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -268,9 +289,14 @@ def save_research_artifacts(result: ResearchResult, output_dir: str | Path) -> N
     result.sensitivity.to_csv(destination / "sensitivity.csv")
     result.regime_metrics.to_csv(destination / "regime_metrics.csv", index=False)
     result.uncertainty.to_csv(destination / "uncertainty.csv")
+    _save_run_config(destination, run_config)
 
 
-def save_pairs_artifacts(result: PairResearchResult, output_dir: str | Path) -> None:
+def save_pairs_artifacts(
+    result: PairResearchResult,
+    output_dir: str | Path,
+    run_config: dict[str, Any] | None = None,
+) -> None:
     """Save the complete pairs audit trail and comparison tables."""
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -278,3 +304,4 @@ def save_pairs_artifacts(result: PairResearchResult, output_dir: str | Path) -> 
     result.equity_curves.to_csv(destination / "equity_curves.csv")
     result.pair.frame.to_csv(destination / "pair_backtest.csv")
     result.uncertainty.to_csv(destination / "uncertainty.csv")
+    _save_run_config(destination, run_config)

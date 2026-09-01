@@ -64,7 +64,10 @@ In long-short mode, asset weights are scaled so
 $|w^A_t|+|w^B_t|$ equals the requested gross leverage. Because both weights vary
 with the rolling hedge ratio, hedge rebalancing also creates turnover. Spot mode
 instead holds only the relatively undervalued leg. It is a long-only rotation,
-not a market-neutral pairs trade.
+not a market-neutral pairs trade. The public backtest and research APIs, CLI and
+dashboard all default to spot long-only; long-short mode must be requested
+explicitly. Even in long-short mode, the construction is not automatically
+market-neutral.
 
 ## 4. Timing and costs
 
@@ -100,6 +103,13 @@ At fold $k$, every candidate is evaluated only between `train_start` and
 `train_end < test_start` is an enforced and tested invariant. Reported adaptive
 statistics concatenate test blocks only.
 
+Here, "out-of-sample" means unseen by the walk-forward parameter-selection
+algorithm. It does not mean a final researcher holdout that has remained unseen
+throughout project development. Looking at these test blocks and then changing
+candidate values, thresholds, assets or dates can produce researcher-level data
+snooping. A stronger follow-up would pre-register the experiment and reserve a
+final holdout until all choices are frozen.
+
 The saved `selections.csv` and `candidate_scores.csv` provide a complete audit
 trail. Expanding training is available but is not the default.
 
@@ -113,9 +123,20 @@ The momentum regime label uses the sign of the previous day's trailing
 126-observation asset return. Shifting the label prevents today's return from
 classifying itself. It is descriptive and is not a trading input.
 
-The pairs strategy is compared with an initial-cost-adjusted 50/50 passive
-holding over the same post-warm-up dates. Its diagnostics expose the rolling
-hedge ratio, intercept, z-score, weights, exposure and turnover.
+The pairs strategy is compared with an initial-cost-adjusted buy-and-hold
+portfolio over the same post-warm-up dates. Half the initial capital is assigned
+to each asset and no rebalancing follows, so the weights drift as the two sleeves
+change value. If $G^A_t$ and $G^B_t$ are their cumulative gross growth factors,
+the benchmark wealth before costs is
+
+$$
+V_t = 0.5G^A_t + 0.5G^B_t.
+$$
+
+The first return is charged one unit of turnover at the configured proportional
+cost. This is distinct from averaging the two asset returns every day, which
+would describe a daily-rebalanced 50/50 portfolio. Pair diagnostics expose the
+rolling hedge ratio, intercept, z-score, weights, exposure and turnover.
 
 The colour-scale table reruns the selected model at every requested combination
 of two parameters. Momentum surfaces use the adaptive experiment's unseen index
@@ -129,7 +150,7 @@ every cell uses the same dates. Invalid entry/exit combinations are blank.
 - Annualised geometric return
 - Annualised sample volatility
 - Annualised Sharpe ratio, assuming a zero risk-free rate
-- Maximum peak-to-trough drawdown
+- Maximum peak-to-trough drawdown, including initial wealth as the first peak
 - Mean daily turnover annualised by 252
 
 The output also reports a 95% circular moving-block bootstrap interval for the
@@ -143,10 +164,19 @@ regimes all weaken naive significance claims.
 
 ## 8. Reproducibility and leakage checks
 
-The momentum generator changes drift and volatility four times. The pairs
-generator creates two correlated log-price paths with a mean-reverting spread.
-Both accept fixed seeds and exist solely to make the complete pipeline testable
-without internet access.
+The momentum generator changes drift and volatility four times. It does not
+directly create changing return autocorrelation or define a known optimal
+momentum half-life, so it cannot validate the adaptive model's economic premise.
+The pairs generator deliberately creates two correlated log-price paths with a
+mean-reverting spread. Positive performance on that dataset verifies the
+pipeline against designed-in behaviour and is not evidence of finding market
+mean reversion. Both generators accept fixed seeds and exist solely to make the
+complete pipeline testable without internet access.
+
+Every CLI study writes `run_config.json` beside its result tables. The file
+records the project version, data source, seed and sample length where relevant,
+trading constraints, transaction costs and model settings. It contains no
+timestamps, so repeated runs with identical inputs remain easy to diff.
 
 The strongest leakage test changes every price after a future cutoff, reruns the
 experiment and asserts that every earlier diagnostic, signal, position, cost and

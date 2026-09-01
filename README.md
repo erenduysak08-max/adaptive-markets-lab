@@ -24,6 +24,22 @@ There is nothing to install. In the sidebar:
 The offline demo is selected by default, so the app still works if live market
 data is temporarily unavailable.
 
+## Research findings
+
+In the committed reproducible momentum demonstration, adaptive momentum returned
+approximately **-3.41%**, fixed 20-day momentum returned approximately **+6.23%**
+and buy-and-hold returned approximately **-4.80%**. The moving-block bootstrap
+interval for adaptive minus fixed momentum includes zero. This experiment
+therefore does not provide robust evidence that selecting the half-life improved
+performance.
+
+Walk-forward testing reduces direct look-ahead bias because each half-life is
+selected before its test block, but the extra model flexibility can still select
+training-period noise. I keep this negative result rather than hiding it. The
+demonstration uses synthetic data to test the research pipeline, so it is not
+market evidence. It also does not prove that adaptive momentum can never work in
+another pre-specified experiment.
+
 ## Why I made this
 
 I built this project while learning more about quantitative research before
@@ -76,7 +92,12 @@ towards it.
 Long-short mode trades both legs and normalises their combined exposure. The
 spot long-only option never shorts: it rotates into the relatively undervalued
 asset. I describe this as long-only rotation rather than market-neutral pairs
-trading.
+trading. The public Python API, command line and dashboard all default to this
+spot long-only constraint; long-short trading must be selected explicitly.
+
+The comparison benchmark invests half its starting capital in each asset and
+does not rebalance, so its weights drift with relative performance. It is not a
+daily-rebalanced 50/50 portfolio.
 
 ## What the dashboard includes
 
@@ -109,6 +130,26 @@ I tried to make the timing of the program clear and testable:
 The full equations and assumptions are in
 [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
+### What “out-of-sample” means here
+
+The walk-forward test blocks are out-of-sample for the parameter-selection
+algorithm: their observations are not used to choose the half-life applied to
+them. They are not a completely untouched researcher holdout. Once I inspect a
+result and change dashboard parameters in response, those dates have influenced
+the research process. Repeatedly adjusting settings after viewing results can
+therefore create researcher-level data snooping even when the walk-forward code
+itself has no direct look-ahead bias.
+
+### What the synthetic experiments establish
+
+The momentum generator changes drift and volatility, but it does not directly
+create changing return autocorrelation or a known optimal momentum half-life.
+Its output checks that the selection, backtest and reporting pipeline run
+reproducibly. The pairs generator deliberately creates a mean-reverting spread;
+positive performance on it verifies that the pipeline can detect the behaviour
+it was designed to contain, not that the model discovered mean reversion in real
+markets.
+
 ## Running it locally
 
 The hosted app above is the quickest way to use the project. To run the code
@@ -137,12 +178,16 @@ python -m pip install -e ".[app]"
 streamlit run app.py
 ```
 
-The command-line demo can also be run without downloading market data:
+The command-line demo can also be run without downloading market data. These are
+the exact commands used for the two committed result directories:
 
 ```bash
-aml-research --demo
-aml-research --strategy pairs --demo --output results/pairs-latest
+aml-research --strategy momentum --demo --output results/demo
+aml-research --strategy pairs --demo --demo-periods 800 --mode long_short --output results/pairs_demo
 ```
+
+Each CLI run also saves a small `run_config.json` containing the data source,
+seed, synthetic sample length, model and trading settings, and project version.
 
 ## Testing
 
@@ -182,9 +227,10 @@ impact, borrowing availability, taxes or portfolio-level allocation. Yahoo
 Finance is useful for a student project but is not an institutional
 point-in-time dataset.
 
-The pairs strategy also assumes the user has already chosen a sensible pair. A
-future version could separate pair formation from trading and test
-cointegration stability using only past data.
+The pairs strategy assumes the user has already chosen a sensible pair. It does
+not perform cointegration-based pair selection, and its long-short weights are
+not automatically market-neutral. A future version could separate pair
+formation from trading and test cointegration stability using only past data.
 
 ## What I learned
 
