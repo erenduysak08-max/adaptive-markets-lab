@@ -98,5 +98,5 @@ def test_pair_research_uses_same_window_for_benchmark() -> None:
     assert research.equity_curves.shape == (360, 2)
     assert list(research.comparison.index) == [
         "Long-only pair rotation",
-        "50/50 buy and hold",
+        "Initial 50/50 buy and hold",
     ]
